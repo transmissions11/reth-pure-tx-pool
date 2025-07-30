@@ -7156,6 +7156,7 @@ dependencies = [
  "eyre",
  "jsonrpsee",
  "reth-ethereum",
+ "rlimit",
  "thousands",
  "tokio",
 ]

@@ -24,8 +24,13 @@ use reth_ethereum::{
 use thousands::Separable;
 use tokio::time::interval;
 
+mod utils;
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    // increase the file descriptor limit so we can handle a lot of connections
+    utils::increase_nofile_limit(1_000_000)?;
+
     // This block provider implementation is used for testing purposes.
     // NOTE: This also means that we don't have access to the blockchain and are not able to serve
     // any requests for headers or bodies which can result in dropped connections initiated by

@@ -5,7 +5,7 @@ use std::sync::{
 use std::time::Duration;
 
 use crossbeam_utils::CachePadded;
-use jsonrpsee::server::{ServerBuilder, ServerConfigBuilder};
+use jsonrpsee::server::ServerConfigBuilder;
 use reth_ethereum::{
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
@@ -128,7 +128,7 @@ async fn main() -> eyre::Result<()> {
     });
 
     let mut txs = pool.pending_transactions_listener_for(TransactionListenerKind::All);
-    while let Some(tx) = txs.recv().await {
+    while let Some(_) = txs.recv().await {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
     }
 

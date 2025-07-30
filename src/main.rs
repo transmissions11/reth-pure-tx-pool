@@ -1,10 +1,6 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
 use std::time::Duration;
 
-use crossbeam_utils::CachePadded;
 use jsonrpsee::server::ServerConfigBuilder;
 use reth_ethereum::{
     chainspec::ChainSpecBuilder,
@@ -15,9 +11,8 @@ use reth_ethereum::{
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit,
-        TransactionListenerKind, TransactionPool, blobstore::InMemoryBlobStore,
-        test_utils::OkValidator,
+        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit, TransactionPool,
+        blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
     provider::test_utils::NoopProvider,
     rpc::{
@@ -27,8 +22,6 @@ use reth_ethereum::{
     tasks::TokioTaskExecutor,
 };
 use tokio::time::interval;
-
-static TOTAL_TRANSACTIONS: CachePadded<AtomicU64> = CachePadded::new(AtomicU64::new(0));
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -118,26 +111,33 @@ async fn main() -> eyre::Result<()> {
 
     // Spawn TPS monitoring task
     tokio::spawn({
+        let pool = pool.clone();
         async move {
             let mut interval = interval(Duration::from_secs(1));
-            let mut last_total = 0u64;
+            let mut last_pending = 0usize;
+            let mut last_queued = 0usize;
             interval.tick().await; // Skip the first tick
             loop {
                 interval.tick().await;
 
-                let current_count = TOTAL_TRANSACTIONS.load(Ordering::Relaxed);
-                let tps = current_count - last_total;
-                last_total = current_count;
+                let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
+                let pending_tps = current_pending as i64 - last_pending as i64;
+                let queued_tps = current_queued as i64 - last_queued as i64;
+                let total_txs = current_pending + current_queued;
 
-                println!("TPS: {}, Total transactions: {}", tps, current_count);
+                last_pending = current_pending;
+                last_queued = current_queued;
+
+                println!(
+                    "Pending TPS: {}, Queued TPS: {}, Total pending: {}, Total queued: {}, Total transactions: {}",
+                    pending_tps, queued_tps, current_pending, current_queued, total_txs
+                );
             }
         }
     });
 
-    let mut txs = pool.pending_transactions_listener_for(TransactionListenerKind::All);
-    while let Some(_) = txs.recv().await {
-        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-    }
+    // Keep the main task alive
+    tokio::signal::ctrl_c().await?;
 
     Ok(())
 }

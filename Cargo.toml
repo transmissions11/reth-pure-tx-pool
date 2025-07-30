@@ -9,6 +9,7 @@ eyre = "0.6"
 tokio = { version = "1.44.2", default-features = false }
 crossbeam-utils = "0.8"
 jsonrpsee = "0.25.1"
+thousands = "0.2.0"
 
 [profile.release]
 debug = true

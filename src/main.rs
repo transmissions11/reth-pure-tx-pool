@@ -21,6 +21,7 @@ use reth_ethereum::{
     },
     tasks::TokioTaskExecutor,
 };
+use thousands::Separable;
 use tokio::time::interval;
 
 #[tokio::main]
@@ -108,7 +109,6 @@ async fn main() -> eyre::Result<()> {
     )
     .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
-
     // Spawn TPS monitoring task
     tokio::spawn({
         let pool = pool.clone();
@@ -123,14 +123,20 @@ async fn main() -> eyre::Result<()> {
                 let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
                 let pending_tps = current_pending as i64 - last_pending as i64;
                 let queued_tps = current_queued as i64 - last_queued as i64;
+                let total_tps = pending_tps + queued_tps;
                 let total_txs = current_pending + current_queued;
 
                 last_pending = current_pending;
                 last_queued = current_queued;
 
                 println!(
-                    "Pending TPS: {}, Queued TPS: {}, Total pending: {}, Total queued: {}, Total transactions: {}",
-                    pending_tps, queued_tps, current_pending, current_queued, total_txs
+                    "TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
+                    total_tps.separate_with_commas(),
+                    pending_tps.separate_with_commas(),
+                    queued_tps.separate_with_commas(),
+                    total_txs.separate_with_commas(),
+                    current_pending.separate_with_commas(),
+                    current_queued.separate_with_commas()
                 );
             }
         }

@@ -7,3 +7,14 @@ edition = "2024"
 reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", features = ["full", "test-utils"] }
 eyre = "0.6"
 tokio = { version = "1.44.2", default-features = false }
+
+[profile.release]
+debug = true
+
+[profile.maxperf]
+inherits = "release"
+debug = false
+strip = "symbols"
+panic = "abort"
+lto = "fat"
+codegen-units = 1

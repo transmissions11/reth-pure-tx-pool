@@ -1,5 +1,10 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use std::time::Duration;
 
+use crossbeam_utils::CachePadded;
 use reth_ethereum::{
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
@@ -19,6 +24,9 @@ use reth_ethereum::{
     },
     tasks::TokioTaskExecutor,
 };
+use tokio::time::interval;
+
+static TOTAL_TRANSACTIONS: CachePadded<AtomicU64> = CachePadded::new(AtomicU64::new(0));
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -79,9 +87,27 @@ async fn main() -> eyre::Result<()> {
         RpcServerConfig::http(Default::default()).with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
 
+    // Spawn TPS monitoring task
+    tokio::spawn({
+        async move {
+            let mut interval = interval(Duration::from_secs(1));
+            let mut last_total = 0u64;
+            interval.tick().await; // Skip the first tick
+            loop {
+                interval.tick().await;
+
+                let current_count = TOTAL_TRANSACTIONS.load(Ordering::Relaxed);
+                let tps = current_count - last_total;
+                last_total = current_count;
+
+                println!("TPS: {}, Total transactions: {}", tps, current_count);
+            }
+        }
+    });
+
     let mut txs = pool.pending_transactions_listener_for(TransactionListenerKind::All);
     while let Some(tx) = txs.recv().await {
-        println!("Received new transaction: {tx:?}");
+        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
     }
 
     Ok(())

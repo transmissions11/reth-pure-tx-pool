@@ -5,6 +5,7 @@ use std::sync::{
 use std::time::Duration;
 
 use crossbeam_utils::CachePadded;
+use jsonrpsee::server::{ServerBuilder, ServerConfigBuilder};
 use reth_ethereum::{
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
@@ -14,8 +15,8 @@ use reth_ethereum::{
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, TransactionListenerKind, TransactionPool,
-        blobstore::InMemoryBlobStore, test_utils::OkValidator,
+        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, TransactionListenerKind,
+        TransactionPool, blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
     provider::test_utils::NoopProvider,
     rpc::{
@@ -44,7 +45,22 @@ async fn main() -> eyre::Result<()> {
         OkValidator::default(),
         CoinbaseTipOrdering::default(),
         InMemoryBlobStore::default(),
-        Default::default(),
+        {
+            let mut config = PoolConfig::default();
+            config.pending_limit.max_txs = 10000000000000;
+            config.basefee_limit.max_txs = 10000000000000;
+            config.queued_limit.max_txs = 10000000000000;
+            config.pending_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
+            config.basefee_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
+            config.queued_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
+            config.max_new_pending_txs_notifications = 10000000;
+            config.max_account_slots = 500000;
+            config.pending_tx_listener_buffer_size = 10000000000000;
+            config.new_tx_listener_buffer_size = 10000000000000;
+            config.minimal_protocol_basefee = 0;
+            config.minimum_priority_fee = Some(0);
+            config
+        },
     );
 
     let spec = Arc::new(ChainSpecBuilder::mainnet().build());
@@ -83,8 +99,14 @@ async fn main() -> eyre::Result<()> {
     // spawn the pool task
     tokio::task::spawn(txpool);
 
-    let server_args =
-        RpcServerConfig::http(Default::default()).with_http_address("0.0.0.0:8545".parse()?);
+    let server_args = RpcServerConfig::http(
+        ServerConfigBuilder::default()
+            .max_request_body_size(1000000)
+            .max_response_body_size(1000000)
+            .max_subscriptions_per_connection(429496729)
+            .max_connections(429496729),
+    )
+    .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
 
     // Spawn TPS monitoring task

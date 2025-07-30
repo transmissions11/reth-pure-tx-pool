@@ -15,8 +15,9 @@ use reth_ethereum::{
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, TransactionListenerKind,
-        TransactionPool, blobstore::InMemoryBlobStore, test_utils::OkValidator,
+        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit,
+        TransactionListenerKind, TransactionPool, blobstore::InMemoryBlobStore,
+        test_utils::OkValidator,
     },
     provider::test_utils::NoopProvider,
     rpc::{
@@ -45,21 +46,26 @@ async fn main() -> eyre::Result<()> {
         OkValidator::default(),
         CoinbaseTipOrdering::default(),
         InMemoryBlobStore::default(),
-        {
-            let mut config = PoolConfig::default();
-            config.pending_limit.max_txs = 10000000000000;
-            config.basefee_limit.max_txs = 10000000000000;
-            config.queued_limit.max_txs = 10000000000000;
-            config.pending_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
-            config.basefee_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
-            config.queued_limit.max_size = 10000 * 1024 * 1024; // 10GB in bytes
-            config.max_new_pending_txs_notifications = 10000000;
-            config.max_account_slots = 500000;
-            config.pending_tx_listener_buffer_size = 10000000000000;
-            config.new_tx_listener_buffer_size = 10000000000000;
-            config.minimal_protocol_basefee = 0;
-            config.minimum_priority_fee = Some(0);
-            config
+        PoolConfig {
+            pending_limit: SubPoolLimit {
+                max_txs: 10_000_000_000_000,
+                max_size: 2 * 1024 * 1024 * 1024,
+            },
+            basefee_limit: SubPoolLimit {
+                max_txs: 10_000_000_000_000,
+                max_size: 2 * 1024 * 1024 * 1024,
+            },
+            queued_limit: SubPoolLimit {
+                max_txs: 10_000_000_000_000,
+                max_size: 2 * 1024 * 1024 * 1024,
+            },
+            max_new_pending_txs_notifications: 10_000_000,
+            max_account_slots: 500_000,
+            pending_tx_listener_buffer_size: 10_000_000_000_000,
+            new_tx_listener_buffer_size: 10_000_000_000_000,
+            minimal_protocol_basefee: 0,
+            minimum_priority_fee: Some(0),
+            ..Default::default()
         },
     );
 
@@ -101,10 +107,11 @@ async fn main() -> eyre::Result<()> {
 
     let server_args = RpcServerConfig::http(
         ServerConfigBuilder::default()
-            .max_request_body_size(1000000)
-            .max_response_body_size(1000000)
+            .max_request_body_size(1024 * 1024 * 1024) // 1GB
+            .max_response_body_size(1024 * 1024 * 1024) // 1GB
             .max_subscriptions_per_connection(429496729)
-            .max_connections(429496729),
+            .max_connections(429496729)
+            .set_message_buffer_capacity(429496729),
     )
     .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;

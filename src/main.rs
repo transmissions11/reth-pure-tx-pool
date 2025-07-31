@@ -1,11 +1,12 @@
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
+use parking_lot::Mutex;
 use reth_ethereum::evm::revm::primitives::{Address, B256, U256};
 use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
@@ -170,7 +171,7 @@ async fn main() -> eyre::Result<()> {
                     println!("[1a] Time creating block: {:?}", block_creation_duration);
 
                     let tx_processing_start = Instant::now();
-                    let mut seen_senders = std::collections::HashSet::new();
+                    let mut seen_senders = HashSet::new();
                     let mut tx_hashes = Vec::new();
                     for tx in pool.all_transactions().pending.into_iter() {
                         seen_senders.insert(tx.transaction.sender());
@@ -185,7 +186,7 @@ async fn main() -> eyre::Result<()> {
                     let accounts_creation_start = Instant::now();
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
                     {
-                        let sender_nonces = SENDER_NONCES.lock().unwrap();
+                        let sender_nonces = SENDER_NONCES.lock();
                         for sender in seen_senders {
                             let nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
                             changed_accounts.push(ChangedAccount {
@@ -234,7 +235,7 @@ async fn main() -> eyre::Result<()> {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
         let sender = tx.transaction.sender();
         let nonce = tx.transaction.nonce();
-        let mut sender_nonces = SENDER_NONCES.lock().unwrap();
+        let mut sender_nonces = SENDER_NONCES.lock();
         let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
         if nonce > prev_nonce {
             sender_nonces.insert(sender, nonce);

@@ -14,6 +14,7 @@ thousands = "0.2.0"
 rlimit = "0.10.2"
 rand = "0.8"
 hashbrown = "0.15.4"
+parking_lot = "0.12.1"
 
 [profile.release]
 debug = true

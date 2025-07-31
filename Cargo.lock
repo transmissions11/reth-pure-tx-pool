@@ -7153,7 +7153,6 @@ version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "crossbeam-utils",
- "dashmap 6.1.0",
  "eyre",
  "hashbrown 0.15.4",
  "jsonrpsee",

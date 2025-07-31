@@ -5,9 +5,10 @@ use std::{sync::Arc, time::Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use hashbrown::{HashMap, HashSet};
-use parking_lot::{Mutex, RwLock};
-use reth_ethereum::evm::revm::primitives::{Address, B256, U256};
+use dashmap::DashMap;
+use hashbrown::HashSet;
+
+use reth_ethereum::evm::revm::primitives::{Address, U256};
 use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
 use reth_ethereum::{
@@ -37,8 +38,7 @@ use thousands::Separable;
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
-static SENDER_NONCES: LazyLock<RwLock<HashMap<Address, u64>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(|| DashMap::new());
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -185,17 +185,14 @@ async fn main() -> eyre::Result<()> {
 
                     let accounts_creation_start = Instant::now();
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
-                    {
-                        let sender_nonces = SENDER_NONCES.read();
-                        for sender in seen_senders {
-                            let nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-                            changed_accounts.push(ChangedAccount {
-                                address: sender,
-                                nonce,
-                                balance: U256::from(nonce),
-                            });
-                        }
-                    } // Scope to ensure we drop the lock on SENDER_NONCES asap.
+                    for sender in seen_senders {
+                        let nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
+                        changed_accounts.push(ChangedAccount {
+                            address: sender,
+                            nonce,
+                            balance: U256::from(nonce),
+                        });
+                    }
                     let accounts_creation_duration = accounts_creation_start.elapsed();
                     println!(
                         "[1c] Time creating changed accounts: {:?}",
@@ -235,10 +232,9 @@ async fn main() -> eyre::Result<()> {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
         let sender = tx.transaction.sender();
         let nonce = tx.transaction.nonce();
-        let mut sender_nonces = SENDER_NONCES.write();
-        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        let prev_nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
         if nonce > prev_nonce {
-            sender_nonces.insert(sender, nonce);
+            SENDER_NONCES.insert(sender, nonce);
         }
     }
 

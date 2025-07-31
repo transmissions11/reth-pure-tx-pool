@@ -1,20 +1,24 @@
-use std::sync::Arc;
 use std::time::Duration;
+use std::{sync::Arc, time::Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
+use reth_ethereum::pool::PoolTransaction;
 use reth_ethereum::{
+    BlockBody,
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
-    evm::EthEvmConfig,
+    evm::{EthEvmConfig, revm::primitives::alloy_primitives::BlockHash},
     network::{
         EthNetworkPrimitives, NetworkConfig, NetworkManager, api::noop::NoopNetwork,
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, PoolTransaction, SubPoolLimit,
-        TransactionPool, blobstore::InMemoryBlobStore, test_utils::OkValidator,
+        CanonicalStateUpdate, CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig,
+        PoolUpdateKind, SubPoolLimit, TransactionPool, TransactionPoolExt,
+        blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
+    primitives::{Header, SealedBlock},
     provider::test_utils::NoopProvider,
     rpc::{
         EthApiBuilder,
@@ -150,14 +154,45 @@ async fn main() -> eyre::Result<()> {
                     current_queued.separate_with_commas()
                 );
 
-                println!(
-                    "There are {} txs in the pool",
-                    pool.all_transactions()
-                        .pending
-                        .into_iter()
-                        .map(|tx| tx.transaction.hash().clone())
-                        .len()
-                );
+                {
+                    let start = Instant::now();
+
+                    let block = alloy_consensus::Block::new(
+                        Header {
+                            gas_limit: 1000_000_000_000_000_u64,
+                            ..Default::default()
+                        },
+                        BlockBody::default(),
+                    );
+                    println!("Clearing {} txs...", pool.pooled_transaction_hashes().len());
+                    let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
+                    pool.on_canonical_state_change(CanonicalStateUpdate {
+                        new_tip: &sealed_block,
+                        pending_block_base_fee: 1_000_000_000, // 1 gwei
+                        pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
+                        changed_accounts: vec![],
+                        //  sender_nonces
+                        //     .lock()
+                        //     .unwrap()
+                        //     .iter()
+                        //     .map(|(address, nonce)| ChangedAccount {
+                        //         address: *address,
+                        //         nonce: *nonce,
+                        //         balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
+                        //     })
+                        //     .collect::<Vec<ChangedAccount>>(),
+                        mined_transactions: pool
+                            .all_transactions()
+                            .pending
+                            .into_iter()
+                            .map(|tx| tx.transaction.hash().clone())
+                            .collect(),
+                        update_kind: PoolUpdateKind::Commit,
+                    });
+
+                    let duration = start.elapsed();
+                    println!("Time emptying queue: {:?}", duration);
+                }
             }
         }
     });

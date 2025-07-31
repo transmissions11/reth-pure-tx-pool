@@ -140,9 +140,6 @@ async fn main() -> eyre::Result<()> {
                 let total_tps = pending_tps + queued_tps;
                 let total_txs = current_pending + current_queued;
 
-                last_pending = current_pending;
-                last_queued = current_queued;
-
                 println!(
                     "TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
                     total_tps.separate_with_commas(),
@@ -182,6 +179,8 @@ async fn main() -> eyre::Result<()> {
                     let duration = start.elapsed();
                     println!("Total on_canonical_state_change time: {:?}", duration);
                 }
+
+                (last_pending, last_queued) = pool.pending_and_queued_txn_count();
             }
         }
     });

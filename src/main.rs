@@ -5,16 +5,12 @@ use std::time::{Duration, Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use rand::Rng;
 use reth_ethereum::evm::revm::primitives::alloy_primitives::BlockHash;
 use reth_ethereum::{
     BlockBody,
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
-    evm::{
-        EthEvmConfig,
-        revm::primitives::{HashMap, U256},
-    },
+    evm::{EthEvmConfig, revm::primitives::HashMap},
     network::{
         EthNetworkPrimitives, NetworkConfig, NetworkManager, api::noop::NoopNetwork,
         config::rng_secret_key,
@@ -24,8 +20,8 @@ use reth_ethereum::{
         PoolUpdateKind, SubPoolLimit, TransactionListenerKind, TransactionPool, TransactionPoolExt,
         blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
-    primitives::{Block, Header, SealedBlock},
-    provider::{ChangedAccount, test_utils::NoopProvider},
+    primitives::{Header, SealedBlock},
+    provider::test_utils::NoopProvider,
     rpc::{
         EthApiBuilder,
         builder::{RethRpcModule, RpcModuleBuilder, RpcServerConfig, TransportRpcModuleConfig},
@@ -164,7 +160,6 @@ async fn main() -> eyre::Result<()> {
                 {
                     let start = Instant::now();
 
-                    let mut rng = rand::thread_rng();
                     let block = alloy_consensus::Block::new(
                         Header {
                             gas_limit: 1000_000_000_000_000_u64,

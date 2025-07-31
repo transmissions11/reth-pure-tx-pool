@@ -12,8 +12,8 @@ use reth_ethereum::{
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit, TransactionPool,
-        blobstore::InMemoryBlobStore, test_utils::OkValidator,
+        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, PoolTransaction, SubPoolLimit,
+        TransactionPool, blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
     provider::test_utils::NoopProvider,
     rpc::{
@@ -152,7 +152,11 @@ async fn main() -> eyre::Result<()> {
 
                 println!(
                     "There are {} txs in the pool",
-                    pool.pooled_transaction_hashes().len()
+                    pool.all_transactions()
+                        .pending
+                        .into_iter()
+                        .map(|tx| tx.transaction.hash().clone())
+                        .len()
                 );
             }
         }

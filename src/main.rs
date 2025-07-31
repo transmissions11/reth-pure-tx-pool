@@ -177,16 +177,17 @@ async fn main() -> eyre::Result<()> {
                         new_tip: &sealed_block,
                         pending_block_base_fee: 1_000_000_000, // 1 gwei
                         pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
-                        changed_accounts: sender_nonces
-                            .lock()
-                            .unwrap()
-                            .iter()
-                            .map(|(address, nonce)| ChangedAccount {
-                                address: *address,
-                                nonce: *nonce,
-                                balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
-                            })
-                            .collect::<Vec<ChangedAccount>>(),
+                        changed_accounts: vec![],
+                        //  sender_nonces
+                        //     .lock()
+                        //     .unwrap()
+                        //     .iter()
+                        //     .map(|(address, nonce)| ChangedAccount {
+                        //         address: *address,
+                        //         nonce: *nonce,
+                        //         balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
+                        //     })
+                        //     .collect::<Vec<ChangedAccount>>(),
                         mined_transactions: pool.pooled_transaction_hashes(),
                         update_kind: PoolUpdateKind::Commit,
                     });

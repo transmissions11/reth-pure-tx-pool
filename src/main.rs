@@ -170,7 +170,12 @@ async fn main() -> eyre::Result<()> {
                         pending_block_base_fee: 1_000_000_000, // 1 gwei
                         pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
                         changed_accounts: vec![],
-                        mined_transactions: vec![],
+                        mined_transactions: pool
+                            .all_transactions()
+                            .pending
+                            .into_iter()
+                            .map(|tx| tx.transaction.hash().clone())
+                            .collect(),
                         update_kind: PoolUpdateKind::Commit,
                     });
 

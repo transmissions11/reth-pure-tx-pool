@@ -174,19 +174,17 @@ async fn main() -> eyre::Result<()> {
                     }
 
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
-                    for sender in seen_senders {
-                        let nonce = SENDER_NONCES
-                            .lock()
-                            .unwrap()
-                            .get(&sender)
-                            .copied()
-                            .unwrap_or(0);
-                        changed_accounts.push(ChangedAccount {
-                            address: sender,
-                            nonce,
-                            balance: U256::from(nonce),
-                        });
-                    }
+                    {
+                        let sender_nonces = SENDER_NONCES.lock().unwrap();
+                        for sender in seen_senders {
+                            let nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+                            changed_accounts.push(ChangedAccount {
+                                address: sender,
+                                nonce,
+                                balance: U256::from(nonce),
+                            });
+                        }
+                    } // Scope to ensure we drop the lock on SENDER_NONCES asap.
 
                     let duration = start.elapsed();
                     println!(

@@ -5,8 +5,9 @@ use std::{sync::Arc, time::Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use hashbrown::{HashMap, HashSet};
-use parking_lot::Mutex;
+use dashmap::DashMap;
+use hashbrown::HashSet;
+
 use reth_ethereum::evm::revm::primitives::{Address, U256};
 use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
@@ -37,8 +38,7 @@ use thousands::Separable;
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
-static SENDER_NONCES: LazyLock<Mutex<HashMap<Address, u64>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(|| DashMap::new());
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -175,17 +175,14 @@ async fn main() -> eyre::Result<()> {
                     }
 
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
-                    {
-                        let sender_nonces = SENDER_NONCES.lock();
-                        for sender in seen_senders {
-                            let nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-                            changed_accounts.push(ChangedAccount {
-                                address: sender,
-                                nonce,
-                                balance: U256::from(nonce),
-                            });
-                        }
-                    } // Scope to ensure we drop the lock on SENDER_NONCES asap.
+                    for sender in seen_senders {
+                        let nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
+                        changed_accounts.push(ChangedAccount {
+                            address: sender,
+                            nonce,
+                            balance: U256::from(nonce),
+                        });
+                    }
 
                     let duration = start.elapsed();
                     println!(
@@ -215,17 +212,20 @@ async fn main() -> eyre::Result<()> {
         }
     });
 
-    let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    while let Some(tx) = txs.recv().await {
-        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-        let sender = tx.transaction.sender();
-        let nonce = tx.transaction.nonce();
-        let mut sender_nonces = SENDER_NONCES.lock();
-        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-        if nonce > prev_nonce {
-            sender_nonces.insert(sender, nonce);
+    tokio::spawn(async move {
+        let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
+        while let Some(tx) = txs.recv().await {
+            TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+            let sender = tx.transaction.sender();
+            let nonce = tx.transaction.nonce();
+            let prev_nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
+            if nonce > prev_nonce {
+                SENDER_NONCES.insert(sender, nonce);
+            }
         }
-    }
+    });
+
+    tokio::signal::ctrl_c().await?; // Wait for Ctrl+C to exit.
 
     Ok(())
 }

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
+use jemallocator::Jemalloc;
 use jsonrpsee::server::ServerConfigBuilder;
 
 use dashmap::DashMap;
@@ -39,6 +40,9 @@ mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(|| DashMap::new());
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {

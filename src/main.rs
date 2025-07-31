@@ -1,20 +1,31 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::AtomicU64};
+use std::time::{Duration, Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
+
+use rand::Rng;
+use reth_ethereum::evm::revm::primitives::alloy_primitives::BlockHash;
 use reth_ethereum::{
+    BlockBody,
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
-    evm::EthEvmConfig,
+    evm::{
+        EthEvmConfig,
+        revm::primitives::{HashMap, U256},
+    },
     network::{
         EthNetworkPrimitives, NetworkConfig, NetworkManager, api::noop::NoopNetwork,
         config::rng_secret_key,
     },
     pool::{
-        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit, TransactionPool,
+        CanonicalStateUpdate, CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig,
+        PoolUpdateKind, SubPoolLimit, TransactionListenerKind, TransactionPool, TransactionPoolExt,
         blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
-    provider::test_utils::NoopProvider,
+    primitives::{Block, Header, SealedBlock},
+    provider::{ChangedAccount, test_utils::NoopProvider},
     rpc::{
         EthApiBuilder,
         builder::{RethRpcModule, RpcModuleBuilder, RpcServerConfig, TransportRpcModuleConfig},
@@ -25,6 +36,8 @@ use thousands::Separable;
 use tokio::time::interval;
 
 mod utils;
+
+static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -62,6 +75,7 @@ async fn main() -> eyre::Result<()> {
             max_account_slots: 500_000,
             pending_tx_listener_buffer_size: 10_000_000_000_000,
             new_tx_listener_buffer_size: 10_000_000_000_000,
+            max_queued_lifetime: Duration::from_secs(360000), // 100 hours
             minimal_protocol_basefee: 0,
             minimum_priority_fee: Some(0),
             ..Default::default()
@@ -114,9 +128,12 @@ async fn main() -> eyre::Result<()> {
     )
     .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
-    // Spawn TPS monitoring task
+
+    let sender_nonces = Arc::new(Mutex::new(HashMap::new()));
+
     tokio::spawn({
         let pool = pool.clone();
+        let sender_nonces = sender_nonces.clone();
         async move {
             let mut interval = interval(Duration::from_secs(1));
             let mut last_pending = 0usize;
@@ -124,6 +141,33 @@ async fn main() -> eyre::Result<()> {
             interval.tick().await; // Skip the first tick
             loop {
                 interval.tick().await;
+
+                let start = Instant::now();
+                {
+                    let mut rng = rand::thread_rng();
+                    let block =
+                        alloy_consensus::Block::new(Header::default(), BlockBody::default());
+                    let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
+                    pool.on_canonical_state_change(CanonicalStateUpdate {
+                        new_tip: &sealed_block,
+                        pending_block_base_fee: 1_000_000_000, // 1 gwei
+                        pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
+                        changed_accounts: sender_nonces
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .map(|(address, nonce)| ChangedAccount {
+                                address: *address,
+                                nonce: *nonce,
+                                balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
+                            })
+                            .collect::<Vec<ChangedAccount>>(),
+                        mined_transactions: pool.pooled_transaction_hashes(),
+                        update_kind: PoolUpdateKind::Commit,
+                    });
+                }
+                let duration = start.elapsed();
+                println!("Time emptying queue: {:?}", duration);
 
                 let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
                 let pending_tps = current_pending as i64 - last_pending as i64;
@@ -147,8 +191,17 @@ async fn main() -> eyre::Result<()> {
         }
     });
 
-    // Keep the main task alive
-    tokio::signal::ctrl_c().await?;
+    let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
+    while let Some(tx) = txs.recv().await {
+        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+        let sender = tx.transaction.sender();
+        let nonce = tx.transaction.nonce();
+        let mut sender_nonces = sender_nonces.lock().unwrap();
+        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        if nonce > prev_nonce {
+            sender_nonces.insert(sender, nonce);
+        }
+    }
 
     Ok(())
 }

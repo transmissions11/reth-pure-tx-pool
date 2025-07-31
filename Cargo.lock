@@ -7152,9 +7152,11 @@ dependencies = [
 name = "reth-pure-tx-pool"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "crossbeam-utils",
  "eyre",
  "jsonrpsee",
+ "rand 0.8.5",
  "reth-ethereum",
  "rlimit",
  "thousands",

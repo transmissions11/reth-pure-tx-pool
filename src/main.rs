@@ -6,7 +6,7 @@ use std::{sync::Arc, time::Instant};
 use jsonrpsee::server::ServerConfigBuilder;
 
 use hashbrown::HashMap;
-use reth_ethereum::evm::revm::primitives::{Address, U256};
+use reth_ethereum::evm::revm::primitives::{Address, B256, U256};
 use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
 use reth_ethereum::{
@@ -37,7 +37,7 @@ mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 static SENDER_NONCES: LazyLock<Mutex<HashMap<Address, u64>>> =
-    LazyLock::new(|| Mutex::new(HashMap::with_capacity(100_000)));
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -170,11 +170,9 @@ async fn main() -> eyre::Result<()> {
                     println!("[1a] Time creating block: {:?}", block_creation_duration);
 
                     let tx_processing_start = Instant::now();
-                    let all_pending_txs = pool.all_transactions().pending;
-                    let mut seen_senders =
-                        std::collections::HashSet::with_capacity(all_pending_txs.len());
-                    let mut tx_hashes = Vec::with_capacity(all_pending_txs.len());
-                    for tx in all_pending_txs.into_iter() {
+                    let mut seen_senders = std::collections::HashSet::new();
+                    let mut tx_hashes = Vec::new();
+                    for tx in pool.all_transactions().pending.into_iter() {
                         seen_senders.insert(tx.transaction.sender());
                         tx_hashes.push(tx.transaction.hash().clone());
                     }
@@ -188,14 +186,14 @@ async fn main() -> eyre::Result<()> {
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
                     {
                         let sender_nonces = SENDER_NONCES.lock().unwrap();
-                        changed_accounts.extend(seen_senders.into_iter().map(|sender| {
+                        for sender in seen_senders {
                             let nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-                            ChangedAccount {
+                            changed_accounts.push(ChangedAccount {
                                 address: sender,
                                 nonce,
                                 balance: U256::from(nonce),
-                            }
-                        }));
+                            });
+                        }
                     } // Scope to ensure we drop the lock on SENDER_NONCES asap.
                     let accounts_creation_duration = accounts_creation_start.elapsed();
                     println!(
@@ -232,27 +230,16 @@ async fn main() -> eyre::Result<()> {
     });
 
     let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    tokio::spawn(async move {
-        let mut batch = Vec::with_capacity(1000);
-        while let Some(tx) = txs.recv().await {
-            TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-            batch.push((tx.transaction.sender(), tx.transaction.nonce()));
-
-            // Process in batches to reduce lock contention
-            if batch.len() >= 1000 {
-                let mut sender_nonces = SENDER_NONCES.lock().unwrap();
-                for (sender, nonce) in batch.drain(..) {
-                    let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-                    if nonce > prev_nonce {
-                        sender_nonces.insert(sender, nonce);
-                    }
-                }
-            }
+    while let Some(tx) = txs.recv().await {
+        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+        let sender = tx.transaction.sender();
+        let nonce = tx.transaction.nonce();
+        let mut sender_nonces = SENDER_NONCES.lock().unwrap();
+        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        if nonce > prev_nonce {
+            sender_nonces.insert(sender, nonce);
         }
-    });
-
-    // Keep the main task running
-    std::future::pending::<()>().await;
+    }
 
     Ok(())
 }

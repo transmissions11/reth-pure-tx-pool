@@ -215,7 +215,7 @@ async fn main() -> eyre::Result<()> {
         }
     });
 
-    let tx_listener_handle = tokio::spawn(async move {
+    tokio::spawn(async move {
         let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
         while let Some(tx) = txs.recv().await {
             TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
@@ -228,7 +228,8 @@ async fn main() -> eyre::Result<()> {
             }
         }
     });
-    let _ = tx_listener_handle.await;
+
+    tokio::signal::ctrl_c().await?; // Wait for Ctrl+C to exit.
 
     Ok(())
 }

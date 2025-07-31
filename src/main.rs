@@ -1,9 +1,14 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use reth_ethereum::pool::PoolTransaction;
+use hashbrown::HashMap;
+use reth_ethereum::evm::revm::primitives::{Address, B256, U256};
+use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
+use reth_ethereum::provider::ChangedAccount;
 use reth_ethereum::{
     BlockBody,
     chainspec::ChainSpecBuilder,
@@ -27,11 +32,12 @@ use reth_ethereum::{
     tasks::TokioTaskExecutor,
 };
 use thousands::Separable;
-use tokio::time::interval;
 
 mod utils;
 
-// static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
+static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
+static SENDER_NONCES: LazyLock<Mutex<HashMap<Address, u64>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -123,8 +129,6 @@ async fn main() -> eyre::Result<()> {
     .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
 
-    // let sender_nonces = Arc::new(Mutex::new(HashMap::new()));
-
     std::thread::spawn({
         let pool = pool.clone();
         move || {
@@ -141,7 +145,7 @@ async fn main() -> eyre::Result<()> {
                 let total_txs = current_pending + current_queued;
 
                 println!(
-                    "TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
+                    "[~] TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
                     total_tps.separate_with_commas(),
                     pending_tps.separate_with_commas(),
                     queued_tps.separate_with_commas(),
@@ -162,22 +166,49 @@ async fn main() -> eyre::Result<()> {
                     );
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
 
+                    let mut seen_senders = std::collections::HashSet::new();
+                    let mut tx_hashes = Vec::new();
+                    for tx in pool.all_transactions().pending.into_iter() {
+                        seen_senders.insert(tx.transaction.sender());
+                        tx_hashes.push(tx.transaction.hash().clone());
+                    }
+
+                    let mut changed_accounts = Vec::with_capacity(seen_senders.len());
+                    for sender in seen_senders {
+                        let nonce = SENDER_NONCES
+                            .lock()
+                            .unwrap()
+                            .get(&sender)
+                            .copied()
+                            .unwrap_or(0);
+                        changed_accounts.push(ChangedAccount {
+                            address: sender,
+                            nonce,
+                            balance: U256::from(nonce),
+                        });
+                    }
+
+                    let duration = start.elapsed();
+                    println!(
+                        "[1] Time setting up for on_canonical_state_change: {:?}",
+                        duration
+                    );
+
+                    let start = Instant::now();
                     pool.on_canonical_state_change(CanonicalStateUpdate {
                         new_tip: &sealed_block,
                         pending_block_base_fee: 1_000_000_000, // 1 gwei
                         pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
-                        changed_accounts: vec![],
-                        mined_transactions: pool
-                            .all_transactions()
-                            .pending
-                            .into_iter()
-                            .map(|tx| tx.transaction.hash().clone())
-                            .collect(),
+                        changed_accounts,
+                        mined_transactions: tx_hashes,
                         update_kind: PoolUpdateKind::Commit,
                     });
 
                     let duration = start.elapsed();
-                    println!("Total on_canonical_state_change time: {:?}", duration);
+                    println!(
+                        "[2] Time spent running on_canonical_state_change: {:?}",
+                        duration
+                    );
                 }
 
                 (last_pending, last_queued) = pool.pending_and_queued_txn_count();
@@ -185,7 +216,17 @@ async fn main() -> eyre::Result<()> {
         }
     });
 
-    tokio::signal::ctrl_c().await?;
+    let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
+    while let Some(tx) = txs.recv().await {
+        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+        let sender = tx.transaction.sender();
+        let nonce = tx.transaction.nonce();
+        let mut sender_nonces = SENDER_NONCES.lock().unwrap();
+        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        if nonce > prev_nonce {
+            sender_nonces.insert(sender, nonce);
+        }
+    }
 
     Ok(())
 }

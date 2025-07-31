@@ -13,6 +13,7 @@ jsonrpsee = "0.25.1"
 thousands = "0.2.0"
 rlimit = "0.10.2"
 rand = "0.8"
+hashbrown = "0.15.4"
 
 [profile.release]
 debug = true

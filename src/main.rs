@@ -125,15 +125,14 @@ async fn main() -> eyre::Result<()> {
 
     // let sender_nonces = Arc::new(Mutex::new(HashMap::new()));
 
-    tokio::spawn({
+    std::thread::spawn({
         let pool = pool.clone();
-        async move {
-            let mut interval = interval(Duration::from_secs(1));
+        move || {
             let mut last_pending = 0usize;
             let mut last_queued = 0usize;
-            interval.tick().await; // Skip the first tick
+            std::thread::sleep(Duration::from_secs(1)); // Skip the first tick
             loop {
-                interval.tick().await;
+                std::thread::sleep(Duration::from_secs(1));
 
                 let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
                 let pending_tps = current_pending as i64 - last_pending as i64;

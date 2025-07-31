@@ -216,26 +216,14 @@ async fn main() -> eyre::Result<()> {
     });
 
     let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    let mut batch = Vec::new();
     while let Some(tx) = txs.recv().await {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
         let sender = tx.transaction.sender();
         let nonce = tx.transaction.nonce();
-        batch.push((sender, nonce));
-
-        // Process batch when it reaches a certain size or we've waited enough
-        if batch.len() >= 1000 {
-            let batch_to_process = batch.clone();
-            batch.clear();
-            std::thread::spawn(move || {
-                let mut sender_nonces = SENDER_NONCES.lock();
-                for (sender, nonce) in batch_to_process {
-                    let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-                    if nonce > prev_nonce {
-                        sender_nonces.insert(sender, nonce);
-                    }
-                }
-            });
+        let mut sender_nonces = SENDER_NONCES.lock();
+        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        if nonce > prev_nonce {
+            sender_nonces.insert(sender, nonce);
         }
     }
 

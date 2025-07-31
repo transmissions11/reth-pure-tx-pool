@@ -163,50 +163,23 @@ async fn main() -> eyre::Result<()> {
                         },
                         BlockBody::default(),
                     );
-                    println!("Clearing {} txs...", pool.pooled_transaction_hashes().len());
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
+
                     pool.on_canonical_state_change(CanonicalStateUpdate {
                         new_tip: &sealed_block,
                         pending_block_base_fee: 1_000_000_000, // 1 gwei
                         pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
                         changed_accounts: vec![],
-                        //  sender_nonces
-                        //     .lock()
-                        //     .unwrap()
-                        //     .iter()
-                        //     .map(|(address, nonce)| ChangedAccount {
-                        //         address: *address,
-                        //         nonce: *nonce,
-                        //         balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
-                        //     })
-                        //     .collect::<Vec<ChangedAccount>>(),
-                        mined_transactions: pool
-                            .all_transactions()
-                            .pending
-                            .into_iter()
-                            .map(|tx| tx.transaction.hash().clone())
-                            .collect(),
+                        mined_transactions: vec![],
                         update_kind: PoolUpdateKind::Commit,
                     });
 
                     let duration = start.elapsed();
-                    println!("Time emptying queue: {:?}", duration);
+                    println!("Total on_canonical_state_change time: {:?}", duration);
                 }
             }
         }
     });
-
-    // let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    // while let Some(tx) = txs.recv().await {
-    //     TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-    //     let sender = tx.transaction.sender();
-    //     let nonce = tx.transaction.nonce();
-    //     let mut sender_nonces = sender_nonces.lock().unwrap();
-    //     let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-    //     if nonce > prev_nonce {
-    //         sender_nonces.insert(sender, nonce);
-    //     }
-    // }
 
     tokio::signal::ctrl_c().await?;
 

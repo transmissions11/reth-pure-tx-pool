@@ -172,6 +172,7 @@ async fn main() -> eyre::Result<()> {
                         },
                         BlockBody::default(),
                     );
+                    println!("Clearing {} txs...", pool.pooled_transaction_hashes().len());
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
                     pool.on_canonical_state_change(CanonicalStateUpdate {
                         new_tip: &sealed_block,

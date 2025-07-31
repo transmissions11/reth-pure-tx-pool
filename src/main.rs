@@ -157,6 +157,7 @@ async fn main() -> eyre::Result<()> {
                 {
                     let start = Instant::now();
 
+                    let block_creation_start = Instant::now();
                     let block = alloy_consensus::Block::new(
                         Header {
                             gas_limit: 1000_000_000_000_000_u64,
@@ -165,14 +166,23 @@ async fn main() -> eyre::Result<()> {
                         BlockBody::default(),
                     );
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
+                    let block_creation_duration = block_creation_start.elapsed();
+                    println!("[1a] Time creating block: {:?}", block_creation_duration);
 
+                    let tx_processing_start = Instant::now();
                     let mut seen_senders = std::collections::HashSet::new();
                     let mut tx_hashes = Vec::new();
                     for tx in pool.all_transactions().pending.into_iter() {
                         seen_senders.insert(tx.transaction.sender());
                         tx_hashes.push(tx.transaction.hash().clone());
                     }
+                    let tx_processing_duration = tx_processing_start.elapsed();
+                    println!(
+                        "[1b] Time processing transactions: {:?}",
+                        tx_processing_duration
+                    );
 
+                    let accounts_creation_start = Instant::now();
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
                     {
                         let sender_nonces = SENDER_NONCES.lock().unwrap();
@@ -185,10 +195,15 @@ async fn main() -> eyre::Result<()> {
                             });
                         }
                     } // Scope to ensure we drop the lock on SENDER_NONCES asap.
+                    let accounts_creation_duration = accounts_creation_start.elapsed();
+                    println!(
+                        "[1c] Time creating changed accounts: {:?}",
+                        accounts_creation_duration
+                    );
 
                     let duration = start.elapsed();
                     println!(
-                        "[1] Time setting up for on_canonical_state_change: {:?}",
+                        "[1] Total time setting up for on_canonical_state_change: {:?}",
                         duration
                     );
 

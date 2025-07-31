@@ -1,26 +1,20 @@
-use std::sync::Mutex;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, atomic::AtomicU64};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use jsonrpsee::server::ServerConfigBuilder;
 
-use reth_ethereum::evm::revm::primitives::alloy_primitives::BlockHash;
 use reth_ethereum::{
-    BlockBody,
     chainspec::ChainSpecBuilder,
     consensus::EthBeaconConsensus,
-    evm::{EthEvmConfig, revm::primitives::HashMap},
+    evm::EthEvmConfig,
     network::{
         EthNetworkPrimitives, NetworkConfig, NetworkManager, api::noop::NoopNetwork,
         config::rng_secret_key,
     },
     pool::{
-        CanonicalStateUpdate, CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig,
-        PoolUpdateKind, SubPoolLimit, TransactionListenerKind, TransactionPool, TransactionPoolExt,
+        CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig, SubPoolLimit, TransactionPool,
         blobstore::InMemoryBlobStore, test_utils::OkValidator,
     },
-    primitives::{Header, SealedBlock},
     provider::test_utils::NoopProvider,
     rpc::{
         EthApiBuilder,
@@ -33,7 +27,7 @@ use tokio::time::interval;
 
 mod utils;
 
-static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
+// static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
@@ -125,7 +119,7 @@ async fn main() -> eyre::Result<()> {
     .with_http_address("0.0.0.0:8545".parse()?);
     let _handle = server_args.start(&server).await?;
 
-    let sender_nonces = Arc::new(Mutex::new(HashMap::new()));
+    // let sender_nonces = Arc::new(Mutex::new(HashMap::new()));
 
     tokio::spawn({
         let pool = pool.clone();
@@ -156,55 +150,27 @@ async fn main() -> eyre::Result<()> {
                     current_queued.separate_with_commas()
                 );
 
-                {
-                    let start = Instant::now();
-
-                    let block = alloy_consensus::Block::new(
-                        Header {
-                            gas_limit: 1000_000_000_000_000_u64,
-                            ..Default::default()
-                        },
-                        BlockBody::default(),
-                    );
-                    println!("Clearing {} txs...", pool.pooled_transaction_hashes().len());
-                    let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
-                    pool.on_canonical_state_change(CanonicalStateUpdate {
-                        new_tip: &sealed_block,
-                        pending_block_base_fee: 1_000_000_000, // 1 gwei
-                        pending_block_blob_fee: Some(1_000_000), // 0.001 gwei
-                        changed_accounts: vec![],
-                        //  sender_nonces
-                        //     .lock()
-                        //     .unwrap()
-                        //     .iter()
-                        //     .map(|(address, nonce)| ChangedAccount {
-                        //         address: *address,
-                        //         nonce: *nonce,
-                        //         balance: U256::from(rng.gen_range(0..1000000000000000000_u64)),
-                        //     })
-                        //     .collect::<Vec<ChangedAccount>>(),
-                        mined_transactions: pool.pooled_transaction_hashes(),
-                        update_kind: PoolUpdateKind::Commit,
-                    });
-
-                    let duration = start.elapsed();
-                    println!("Time emptying queue: {:?}", duration);
-                }
+                println!(
+                    "There are {} txs in the pool",
+                    pool.pooled_transaction_hashes().len()
+                );
             }
         }
     });
 
-    let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    while let Some(tx) = txs.recv().await {
-        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-        let sender = tx.transaction.sender();
-        let nonce = tx.transaction.nonce();
-        let mut sender_nonces = sender_nonces.lock().unwrap();
-        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-        if nonce > prev_nonce {
-            sender_nonces.insert(sender, nonce);
-        }
-    }
+    // let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
+    // while let Some(tx) = txs.recv().await {
+    //     TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+    //     let sender = tx.transaction.sender();
+    //     let nonce = tx.transaction.nonce();
+    //     let mut sender_nonces = sender_nonces.lock().unwrap();
+    //     let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+    //     if nonce > prev_nonce {
+    //         sender_nonces.insert(sender, nonce);
+    //     }
+    // }
+
+    tokio::signal::ctrl_c().await?;
 
     Ok(())
 }

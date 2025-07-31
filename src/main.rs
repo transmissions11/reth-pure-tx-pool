@@ -215,17 +215,20 @@ async fn main() -> eyre::Result<()> {
         }
     });
 
-    let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-    while let Some(tx) = txs.recv().await {
-        TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-        let sender = tx.transaction.sender();
-        let nonce = tx.transaction.nonce();
-        let mut sender_nonces = SENDER_NONCES.lock();
-        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-        if nonce > prev_nonce {
-            sender_nonces.insert(sender, nonce);
+    let tx_listener_handle = tokio::spawn(async move {
+        let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
+        while let Some(tx) = txs.recv().await {
+            TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
+            let sender = tx.transaction.sender();
+            let nonce = tx.transaction.nonce();
+            let mut sender_nonces = SENDER_NONCES.lock();
+            let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+            if nonce > prev_nonce {
+                sender_nonces.insert(sender, nonce);
+            }
         }
-    }
+    });
+    let _ = tx_listener_handle.await;
 
     Ok(())
 }

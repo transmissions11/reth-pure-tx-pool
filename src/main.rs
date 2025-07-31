@@ -145,8 +145,13 @@ async fn main() -> eyre::Result<()> {
                 let start = Instant::now();
                 {
                     let mut rng = rand::thread_rng();
-                    let block =
-                        alloy_consensus::Block::new(Header::default(), BlockBody::default());
+                    let block = alloy_consensus::Block::new(
+                        Header {
+                            gas_limit: 1000_000_000_000_000_u64,
+                            ..Default::default()
+                        },
+                        BlockBody::default(),
+                    );
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
                     pool.on_canonical_state_change(CanonicalStateUpdate {
                         new_tip: &sealed_block,

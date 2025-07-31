@@ -142,26 +142,27 @@ async fn main() -> eyre::Result<()> {
             loop {
                 interval.tick().await;
 
-                let start = Instant::now();
+                let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
+                let pending_tps = current_pending as i64 - last_pending as i64;
+                let queued_tps = current_queued as i64 - last_queued as i64;
+                let total_tps = pending_tps + queued_tps;
+                let total_txs = current_pending + current_queued;
+
+                last_pending = current_pending;
+                last_queued = current_queued;
+
+                println!(
+                    "TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
+                    total_tps.separate_with_commas(),
+                    pending_tps.separate_with_commas(),
+                    queued_tps.separate_with_commas(),
+                    total_txs.separate_with_commas(),
+                    current_pending.separate_with_commas(),
+                    current_queued.separate_with_commas()
+                );
+
                 {
-                    let (current_pending, current_queued) = pool.pending_and_queued_txn_count();
-                    let pending_tps = current_pending as i64 - last_pending as i64;
-                    let queued_tps = current_queued as i64 - last_queued as i64;
-                    let total_tps = pending_tps + queued_tps;
-                    let total_txs = current_pending + current_queued;
-
-                    last_pending = current_pending;
-                    last_queued = current_queued;
-
-                    println!(
-                        "TPS: {} ({} Pending, {} Queued), Total transactions: {} ({} Pending, {} Queued)",
-                        total_tps.separate_with_commas(),
-                        pending_tps.separate_with_commas(),
-                        queued_tps.separate_with_commas(),
-                        total_txs.separate_with_commas(),
-                        current_pending.separate_with_commas(),
-                        current_queued.separate_with_commas()
-                    );
+                    let start = Instant::now();
 
                     let mut rng = rand::thread_rng();
                     let block = alloy_consensus::Block::new(
@@ -189,9 +190,10 @@ async fn main() -> eyre::Result<()> {
                         mined_transactions: pool.pooled_transaction_hashes(),
                         update_kind: PoolUpdateKind::Commit,
                     });
+
+                    let duration = start.elapsed();
+                    println!("Time emptying queue: {:?}", duration);
                 }
-                let duration = start.elapsed();
-                println!("Time emptying queue: {:?}", duration);
             }
         }
     });
@@ -199,13 +201,13 @@ async fn main() -> eyre::Result<()> {
     let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
     while let Some(tx) = txs.recv().await {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-        let sender = tx.transaction.sender();
-        let nonce = tx.transaction.nonce();
-        let mut sender_nonces = sender_nonces.lock().unwrap();
-        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-        if nonce > prev_nonce {
-            sender_nonces.insert(sender, nonce);
-        }
+        // let sender = tx.transaction.sender();
+        // let nonce = tx.transaction.nonce();
+        // let mut sender_nonces = sender_nonces.lock().unwrap();
+        // let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        // if nonce > prev_nonce {
+        //     sender_nonces.insert(sender, nonce);
+        // }
     }
 
     Ok(())

@@ -201,13 +201,13 @@ async fn main() -> eyre::Result<()> {
     let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
     while let Some(tx) = txs.recv().await {
         TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-        // let sender = tx.transaction.sender();
-        // let nonce = tx.transaction.nonce();
-        // let mut sender_nonces = sender_nonces.lock().unwrap();
-        // let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
-        // if nonce > prev_nonce {
-        //     sender_nonces.insert(sender, nonce);
-        // }
+        let sender = tx.transaction.sender();
+        let nonce = tx.transaction.nonce();
+        let mut sender_nonces = sender_nonces.lock().unwrap();
+        let prev_nonce = sender_nonces.get(&sender).copied().unwrap_or(0);
+        if nonce > prev_nonce {
+            sender_nonces.insert(sender, nonce);
+        }
     }
 
     Ok(())

@@ -129,7 +129,6 @@ async fn main() -> eyre::Result<()> {
 
     tokio::spawn({
         let pool = pool.clone();
-        let sender_nonces = sender_nonces.clone();
         async move {
             let mut interval = interval(Duration::from_secs(1));
             let mut last_pending = 0usize;

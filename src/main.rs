@@ -189,7 +189,7 @@ async fn main() -> eyre::Result<()> {
 
                     let duration = start.elapsed();
                     println!(
-                        "[1] Total time setting up for on_canonical_state_change: {:?}",
+                        "[1] Total time setting up for on_canonical_state_change: {:.2?}",
                         duration
                     );
 
@@ -205,7 +205,7 @@ async fn main() -> eyre::Result<()> {
 
                     let duration = start.elapsed();
                     println!(
-                        "[2] Time spent running on_canonical_state_change: {:?}",
+                        "[2] Time spent running on_canonical_state_change: {:.2?}",
                         duration
                     );
                 }

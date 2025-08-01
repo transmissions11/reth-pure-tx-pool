@@ -2,7 +2,6 @@ use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
 use jsonrpsee::server::ServerConfigBuilder;
-use reth_ethereum::chainspec::EthChainSpec;
 use reth_ethereum::cli::chainspec::chain_value_parser;
 use reth_ethereum::evm::revm::primitives::{Address, U256};
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;

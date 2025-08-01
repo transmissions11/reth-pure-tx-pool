@@ -1,16 +1,14 @@
-use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
-use std::{sync::Arc, time::Instant};
-
-use jemallocator::Jemalloc;
-use jsonrpsee::server::ServerConfigBuilder;
-
+use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
-
+use jsonrpsee::server::ServerConfigBuilder;
+use reth_ethereum::cli::chainspec::{EthereumChainSpecParser, chain_value_parser};
 use reth_ethereum::evm::revm::primitives::{Address, U256};
-use reth_ethereum::pool::{PoolTransaction, TransactionListenerKind};
+use reth_ethereum::node::EthereumPoolBuilder;
+use reth_ethereum::node::builder::BuilderContext;
+use reth_ethereum::node::builder::components::PoolBuilder;
+use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
+use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
 use reth_ethereum::{
     BlockBody,
@@ -34,20 +32,34 @@ use reth_ethereum::{
     },
     tasks::TokioTaskExecutor,
 };
+use std::fs;
+use std::path::PathBuf;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+use std::{sync::Arc, time::Instant};
 use thousands::Separable;
+// use jemallocator::Jemalloc;
 
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(DashMap::new);
 
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
+// #[global_allocator]
+// static GLOBAL: Jemalloc = Jemalloc;
+#[derive(Parser)]
+#[command(name = "reth-pure-tx-pool")]
+struct Args {
+    #[arg(long, help = "Path to the genesis JSON file")]
+    chain: Option<PathBuf>,
+}
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // increase the file descriptor limit so we can handle a lot of connections
     utils::increase_nofile_limit(1_000_000)?;
+    let args = Args::parse();
 
     // This block provider implementation is used for testing purposes.
     // NOTE: This also means that we don't have access to the blockchain and are not able to serve
@@ -55,14 +67,25 @@ async fn main() -> eyre::Result<()> {
     // remote or able to validate transaction against the latest state.
     let client = NoopProvider::default();
 
+    let chain_spec = if let Some(path) = args.chain {
+        let genesis = fs::read_to_string(path)?;
+        chain_value_parser(&genesis)?
+    } else {
+        Arc::new(ChainSpecBuilder::mainnet().build())
+    };
+
+    let blob_store = InMemoryBlobStore::default();
+    let tx_validator =
+        EthTransactionValidatorBuilder::new(client.clone()).build(blob_store.clone());
+
     let pool: Pool<
-        OkValidator<EthPooledTransaction>,
+        EthTransactionValidator<_, EthPooledTransaction>,
         CoinbaseTipOrdering<EthPooledTransaction>,
         InMemoryBlobStore,
     > = reth_ethereum::pool::Pool::new(
-        OkValidator::default(),
+        tx_validator,
         CoinbaseTipOrdering::default(),
-        InMemoryBlobStore::default(),
+        blob_store,
         PoolConfig {
             pending_limit: SubPoolLimit {
                 max_txs: 10_000_000_000_000,
@@ -87,15 +110,14 @@ async fn main() -> eyre::Result<()> {
         },
     );
 
-    let spec = Arc::new(ChainSpecBuilder::mainnet().build());
     let rpc_builder = RpcModuleBuilder::default()
         .with_provider(client.clone())
         // Rest is just noops that do nothing
         .with_pool(pool.clone())
         .with_noop_network()
         .with_executor(Box::new(TokioTaskExecutor::default()))
-        .with_evm_config(EthEvmConfig::new(spec.clone()))
-        .with_consensus(EthBeaconConsensus::new(spec.clone()));
+        .with_evm_config(EthEvmConfig::new(chain_spec.clone()))
+        .with_consensus(EthBeaconConsensus::new(chain_spec.clone()));
 
     let eth_api = EthApiBuilder::new(
         client.clone(),

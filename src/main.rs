@@ -3,11 +3,8 @@ use dashmap::DashMap;
 use hashbrown::HashSet;
 use tikv_jemallocator::Jemalloc;
 use jsonrpsee::server::ServerConfigBuilder;
-use reth_ethereum::cli::chainspec::{EthereumChainSpecParser, chain_value_parser};
+use reth_ethereum::cli::chainspec::chain_value_parser;
 use reth_ethereum::evm::revm::primitives::{Address, U256};
-use reth_ethereum::node::EthereumPoolBuilder;
-use reth_ethereum::node::builder::BuilderContext;
-use reth_ethereum::node::builder::components::PoolBuilder;
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
 use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::ChangedAccount;
@@ -23,7 +20,7 @@ use reth_ethereum::{
     pool::{
         CanonicalStateUpdate, CoinbaseTipOrdering, EthPooledTransaction, Pool, PoolConfig,
         PoolUpdateKind, SubPoolLimit, TransactionPool, TransactionPoolExt,
-        blobstore::InMemoryBlobStore, test_utils::OkValidator,
+        blobstore::InMemoryBlobStore,
     },
     primitives::{Header, SealedBlock},
     provider::test_utils::NoopProvider,

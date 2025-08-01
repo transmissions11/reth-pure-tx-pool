@@ -1,6 +1,7 @@
 use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
+use jemallocator::Jemalloc;
 use jsonrpsee::server::ServerConfigBuilder;
 use reth_ethereum::cli::chainspec::{EthereumChainSpecParser, chain_value_parser};
 use reth_ethereum::evm::revm::primitives::{Address, U256};
@@ -39,15 +40,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use thousands::Separable;
-// use jemallocator::Jemalloc;
 
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(DashMap::new);
 
-// #[global_allocator]
-// static GLOBAL: Jemalloc = Jemalloc;
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 #[derive(Parser)]
 #[command(name = "reth-pure-tx-pool")]
 struct Args {

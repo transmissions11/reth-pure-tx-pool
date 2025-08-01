@@ -1,7 +1,7 @@
 use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
-use jemallocator::Jemalloc;
+use tikv_jemallocator::Jemalloc;
 use jsonrpsee::server::ServerConfigBuilder;
 use reth_ethereum::cli::chainspec::{EthereumChainSpecParser, chain_value_parser};
 use reth_ethereum::evm::revm::primitives::{Address, U256};

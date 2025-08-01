@@ -39,7 +39,7 @@ use thousands::Separable;
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
-static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(|| DashMap::new());
+static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(DashMap::new);
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -164,7 +164,7 @@ async fn main() -> eyre::Result<()> {
 
                     let block = alloy_consensus::Block::new(
                         Header {
-                            gas_limit: 1000_000_000_000_000_u64,
+                            gas_limit: 1_000_000_000_000_000_u64,
                             ..Default::default()
                         },
                         BlockBody::default(),
@@ -175,7 +175,7 @@ async fn main() -> eyre::Result<()> {
                     let mut tx_hashes = Vec::new();
                     for tx in pool.all_transactions().pending.into_iter() {
                         seen_senders.insert(tx.transaction.sender());
-                        tx_hashes.push(tx.transaction.hash().clone());
+                        tx_hashes.push(*tx.transaction.hash());
                     }
 
                     let mut changed_accounts = Vec::with_capacity(seen_senders.len());
@@ -190,8 +190,7 @@ async fn main() -> eyre::Result<()> {
 
                     let duration = start.elapsed();
                     println!(
-                        "[1] Total time setting up for on_canonical_state_change: {:.2?}",
-                        duration
+                        "[1] Total time setting up for on_canonical_state_change: {duration:.2?}"
                     );
 
                     let start = Instant::now();
@@ -205,10 +204,7 @@ async fn main() -> eyre::Result<()> {
                     });
 
                     let duration = start.elapsed();
-                    println!(
-                        "[2] Time spent running on_canonical_state_change: {:.2?}",
-                        duration
-                    );
+                    println!("[2] Time spent running on_canonical_state_change: {duration:.2?}");
                 }
 
                 (last_pending, last_queued) = pool.pending_and_queued_txn_count();

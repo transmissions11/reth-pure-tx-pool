@@ -11,8 +11,7 @@ pub fn increase_nofile_limit(min_limit: u64) -> io::Result<u64> {
 
     if hard < min_limit {
         panic!(
-            "File descriptor hard limit is too low. Please increase it to at least {}.",
-            min_limit
+            "File descriptor hard limit is too low. Please increase it to at least {min_limit}."
         );
     }
 

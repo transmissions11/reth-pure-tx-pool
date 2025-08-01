@@ -99,7 +99,6 @@ async fn main() -> eyre::Result<()> {
     let blob_store = InMemoryBlobStore::default();
     let tx_validator =
         EthTransactionValidatorBuilder::new(client.clone()).build(blob_store.clone());
-    // let tx_validator = OkValidator::default();
     let pool: Pool<
         EthTransactionValidator<_, EthPooledTransaction>,
         CoinbaseTipOrdering<EthPooledTransaction>,

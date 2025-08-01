@@ -1,8 +1,8 @@
 use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
-use tikv_jemallocator::Jemalloc;
 use jsonrpsee::server::ServerConfigBuilder;
+use reth_ethereum::chainspec::EthChainSpec;
 use reth_ethereum::cli::chainspec::chain_value_parser;
 use reth_ethereum::evm::revm::primitives::{Address, U256};
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
@@ -37,6 +37,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use thousands::Separable;
+use tikv_jemallocator::Jemalloc;
 
 mod utils;
 
@@ -108,20 +109,22 @@ async fn main() -> eyre::Result<()> {
         },
     );
 
+    let eth_evm_config = EthEvmConfig::new(chain_spec.clone());
+
     let rpc_builder = RpcModuleBuilder::default()
         .with_provider(client.clone())
         // Rest is just noops that do nothing
         .with_pool(pool.clone())
         .with_noop_network()
         .with_executor(Box::new(TokioTaskExecutor::default()))
-        .with_evm_config(EthEvmConfig::new(chain_spec.clone()))
+        .with_evm_config(eth_evm_config.clone())
         .with_consensus(EthBeaconConsensus::new(chain_spec.clone()));
 
     let eth_api = EthApiBuilder::new(
         client.clone(),
         pool.clone(),
         NoopNetwork::default(),
-        EthEvmConfig::mainnet(),
+        eth_evm_config,
     )
     .build();
     let config = TransportRpcModuleConfig::default().with_http([RethRpcModule::Eth]);

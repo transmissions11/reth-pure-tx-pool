@@ -2,11 +2,23 @@ use clap::Parser;
 use dashmap::DashMap;
 use hashbrown::HashSet;
 use jsonrpsee::server::ServerConfigBuilder;
+use reth_db_common::init::init_genesis;
+use reth_ethereum::chainspec::EthChainSpec;
 use reth_ethereum::cli::chainspec::chain_value_parser;
+use reth_ethereum::evm::revm::db::CacheDB;
 use reth_ethereum::evm::revm::primitives::{Address, U256};
+use reth_ethereum::node::EthereumNode;
+use reth_ethereum::node::api::NodeTypesWithDBAdapter;
+use reth_ethereum::pool::test_utils::OkValidator;
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
 use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction, TransactionListenerKind};
-use reth_ethereum::provider::ChangedAccount;
+use reth_ethereum::provider::db::mdbx::DatabaseArguments;
+use reth_ethereum::provider::db::{ClientVersion, DatabaseEnv, init_db, open_db};
+use reth_ethereum::provider::providers::{
+    BlockchainProvider, ProviderFactoryBuilder, StaticFileProvider,
+};
+use reth_ethereum::provider::{ChangedAccount, ProviderFactory};
+use reth_ethereum::rpc::eth::StateCacheDb;
 use reth_ethereum::{
     BlockBody,
     chainspec::ChainSpecBuilder,
@@ -30,7 +42,7 @@ use reth_ethereum::{
     tasks::TokioTaskExecutor,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -51,19 +63,17 @@ static GLOBAL: Jemalloc = Jemalloc;
 struct Args {
     #[arg(long, help = "Path to the genesis JSON file")]
     chain: Option<PathBuf>,
+
+    #[arg(long, help = "Max batch size for txpool insertion")]
+    max_batch_size: Option<usize>,
 }
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
     // increase the file descriptor limit so we can handle a lot of connections
     utils::increase_nofile_limit(1_000_000)?;
-    let args = Args::parse();
 
-    // This block provider implementation is used for testing purposes.
-    // NOTE: This also means that we don't have access to the blockchain and are not able to serve
-    // any requests for headers or bodies which can result in dropped connections initiated by
-    // remote or able to validate transaction against the latest state.
-    let client = NoopProvider::default();
+    let args = Args::parse();
 
     let chain_spec = if let Some(path) = args.chain {
         let genesis = fs::read_to_string(path)?;
@@ -72,10 +82,23 @@ async fn main() -> eyre::Result<()> {
         Arc::new(ChainSpecBuilder::mainnet().build())
     };
 
+    let db_path = Path::new("./data");
+    if !db_path.exists() {
+        fs::create_dir_all(db_path)?;
+    }
+    let db = Arc::new(init_db(db_path, DatabaseArguments::default())?);
+    let factory = ProviderFactory::<NodeTypesWithDBAdapter<EthereumNode, Arc<DatabaseEnv>>>::new(
+        db.clone(),
+        chain_spec.clone(),
+        StaticFileProvider::read_write(db_path.join("static_files"))?,
+    );
+    init_genesis(&factory)?;
+
+    let client = BlockchainProvider::new(factory)?;
+
     let blob_store = InMemoryBlobStore::default();
     let tx_validator =
         EthTransactionValidatorBuilder::new(client.clone()).build(blob_store.clone());
-
     let pool: Pool<
         EthTransactionValidator<_, EthPooledTransaction>,
         CoinbaseTipOrdering<EthPooledTransaction>,
@@ -119,13 +142,19 @@ async fn main() -> eyre::Result<()> {
         .with_evm_config(eth_evm_config.clone())
         .with_consensus(EthBeaconConsensus::new(chain_spec.clone()));
 
-    let eth_api = EthApiBuilder::new(
+    let eth_api_builder = EthApiBuilder::new(
         client.clone(),
         pool.clone(),
         NoopNetwork::default(),
         eth_evm_config,
-    )
-    .build();
+    );
+
+    let eth_api = if let Some(batch_size) = args.max_batch_size {
+        eth_api_builder.max_batch_size(batch_size).build()
+    } else {
+        eth_api_builder.build()
+    };
+
     let config = TransportRpcModuleConfig::default().with_http([RethRpcModule::Eth]);
     let server = rpc_builder.build(config, eth_api);
 
@@ -206,7 +235,7 @@ async fn main() -> eyre::Result<()> {
                         changed_accounts.push(ChangedAccount {
                             address: sender,
                             nonce,
-                            balance: U256::from(nonce),
+                            balance: U256::MAX,
                         });
                     }
 

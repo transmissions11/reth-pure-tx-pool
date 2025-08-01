@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-reth-ethereum = { git = "https://github.com/paradigmxyz/reth.git", features = ["full", "test-utils", "cli"] }
+reth-ethereum = { git = "https://github.com/0xKitsune/reth.git", features = ["full", "test-utils", "cli"], rev = "b7a3f06e699aeec46a5df2cfbe1daf710f72ca68" }
+reth-db-common = { git = "https://github.com/0xKitsune/reth.git", rev = "b7a3f06e699aeec46a5df2cfbe1daf710f72ca68" }
 eyre = "0.6"
 alloy-consensus = { version = "1.0.23", default-features = false }
 tokio = { version = "1.44.2", default-features = false }

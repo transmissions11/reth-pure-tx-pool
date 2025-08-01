@@ -96,11 +96,6 @@ async fn main() -> eyre::Result<()> {
 
     let client = BlockchainProvider::new(factory)?;
 
-    // This block provider implementation is used for testing purposes.
-    // NOTE: This also means that we don't have access to the blockchain and are not able to serve
-    // remote or able to validate transaction against the latest state.
-    // let client = NoopProvider::eth(chain_spec.clone());
-
     let blob_store = InMemoryBlobStore::default();
     let tx_validator =
         EthTransactionValidatorBuilder::new(client.clone()).build(blob_store.clone());

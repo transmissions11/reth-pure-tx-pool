@@ -3,22 +3,16 @@ use dashmap::DashMap;
 use hashbrown::HashSet;
 use jsonrpsee::server::ServerConfigBuilder;
 use reth_db_common::init::init_genesis;
-use reth_ethereum::chainspec::EthChainSpec;
 use reth_ethereum::cli::chainspec::chain_value_parser;
-use reth_ethereum::evm::revm::db::CacheDB;
 use reth_ethereum::evm::revm::primitives::{Address, U256};
 use reth_ethereum::node::EthereumNode;
 use reth_ethereum::node::api::NodeTypesWithDBAdapter;
-use reth_ethereum::pool::test_utils::OkValidator;
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
 use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction, TransactionListenerKind};
 use reth_ethereum::provider::db::mdbx::DatabaseArguments;
-use reth_ethereum::provider::db::{ClientVersion, DatabaseEnv, init_db, open_db};
-use reth_ethereum::provider::providers::{
-    BlockchainProvider, ProviderFactoryBuilder, StaticFileProvider,
-};
+use reth_ethereum::provider::db::{DatabaseEnv, init_db};
+use reth_ethereum::provider::providers::{BlockchainProvider, StaticFileProvider};
 use reth_ethereum::provider::{ChangedAccount, ProviderFactory};
-use reth_ethereum::rpc::eth::StateCacheDb;
 use reth_ethereum::{
     BlockBody,
     chainspec::ChainSpecBuilder,
@@ -34,7 +28,6 @@ use reth_ethereum::{
         blobstore::InMemoryBlobStore,
     },
     primitives::{Header, SealedBlock},
-    provider::test_utils::NoopProvider,
     rpc::{
         EthApiBuilder,
         builder::{RethRpcModule, RpcModuleBuilder, RpcServerConfig, TransportRpcModuleConfig},

@@ -1,14 +1,13 @@
 use clap::Parser;
-use dashmap::DashMap;
-use hashbrown::HashSet;
+use hashbrown::HashMap;
 use jsonrpsee::server::ServerConfigBuilder;
 use reth_db_common::init::init_genesis;
 use reth_ethereum::cli::chainspec::chain_value_parser;
-use reth_ethereum::evm::revm::primitives::{Address, U256};
+use reth_ethereum::evm::revm::primitives::U256;
 use reth_ethereum::node::EthereumNode;
 use reth_ethereum::node::api::NodeTypesWithDBAdapter;
 use reth_ethereum::pool::validate::EthTransactionValidatorBuilder;
-use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction, TransactionListenerKind};
+use reth_ethereum::pool::{EthTransactionValidator, PoolTransaction};
 use reth_ethereum::provider::db::mdbx::DatabaseArguments;
 use reth_ethereum::provider::db::{DatabaseEnv, init_db};
 use reth_ethereum::provider::providers::{BlockchainProvider, StaticFileProvider};
@@ -36,8 +35,7 @@ use reth_ethereum::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use thousands::Separable;
@@ -46,7 +44,6 @@ use tikv_jemallocator::Jemalloc;
 mod utils;
 
 static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
-static SENDER_NONCES: LazyLock<DashMap<Address, u64>> = LazyLock::new(DashMap::new);
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
@@ -215,20 +212,29 @@ async fn main() -> eyre::Result<()> {
                     );
                     let sealed_block = SealedBlock::new_unchecked(block, BlockHash::ZERO);
 
-                    let mut seen_senders = HashSet::new();
+                    let mut touched_senders_final_nonces = HashMap::new();
                     let mut tx_hashes = Vec::new();
                     for tx in pool.all_transactions().pending.into_iter() {
-                        seen_senders.insert(tx.transaction.sender());
+                        let sender = tx.transaction.sender();
+                        let nonce = tx.nonce();
+                        touched_senders_final_nonces
+                            .entry(sender)
+                            .and_modify(|existing_nonce| {
+                                if nonce > *existing_nonce {
+                                    *existing_nonce = nonce;
+                                }
+                            })
+                            .or_insert(nonce);
                         tx_hashes.push(*tx.transaction.hash());
                     }
 
-                    let mut changed_accounts = Vec::with_capacity(seen_senders.len());
-                    for sender in seen_senders {
-                        let nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
+                    let mut changed_accounts =
+                        Vec::with_capacity(touched_senders_final_nonces.len());
+                    for (sender, nonce) in touched_senders_final_nonces {
                         changed_accounts.push(ChangedAccount {
                             address: sender,
                             nonce,
-                            balance: U256::MAX,
+                            balance: U256::MAX - U256::from(nonce),
                         });
                     }
 
@@ -252,19 +258,6 @@ async fn main() -> eyre::Result<()> {
                 }
 
                 (last_pending, last_queued) = pool.pending_and_queued_txn_count();
-            }
-        }
-    });
-
-    tokio::spawn(async move {
-        let mut txs = pool.new_transactions_listener_for(TransactionListenerKind::All);
-        while let Some(tx) = txs.recv().await {
-            TOTAL_TRANSACTIONS.fetch_add(1, Ordering::Relaxed);
-            let sender = tx.transaction.sender();
-            let nonce = tx.transaction.nonce();
-            let prev_nonce = SENDER_NONCES.get(&sender).map(|v| *v).unwrap_or(0);
-            if nonce > prev_nonce {
-                SENDER_NONCES.insert(sender, nonce);
             }
         }
     });

@@ -35,15 +35,12 @@ use reth_ethereum::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use std::{sync::Arc, time::Instant};
 use thousands::Separable;
 use tikv_jemallocator::Jemalloc;
 
 mod utils;
-
-static TOTAL_TRANSACTIONS: AtomicU64 = AtomicU64::new(0);
 
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
